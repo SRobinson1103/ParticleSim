@@ -14,13 +14,11 @@ std::string loadShaderSource(const char* filePath)
     return buffer.str();
 }
 
-GLuint compileShader(const char* filePath, GLenum shaderType)
+// Function to compile a shader
+GLuint compileShader(const char* source, GLenum shaderType)
 {
-    std::string source = loadShaderSource(filePath);
-    const char* sourceCStr = source.c_str();
-
     GLuint shader = glCreateShader(shaderType);
-    glShaderSource(shader, 1, &sourceCStr, nullptr);
+    glShaderSource(shader, 1, &source, nullptr);
     glCompileShader(shader);
 
     // Check for compile errors
@@ -32,14 +30,14 @@ GLuint compileShader(const char* filePath, GLenum shaderType)
         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
         std::cerr << "ERROR::SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
     }
-
     return shader;
 }
 
-GLuint createShaderProgram(const char* vertexPath, const char* fragmentPath)
+// Function to create and link a shader program
+GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
 {
-    GLuint vertexShader = compileShader(vertexPath, GL_VERTEX_SHADER);
-    GLuint fragmentShader = compileShader(fragmentPath, GL_FRAGMENT_SHADER);
+    GLuint vertexShader = compileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint fragmentShader = compileShader(fragmentSource, GL_FRAGMENT_SHADER);
 
     GLuint program = glCreateProgram();
     glAttachShader(program, vertexShader);
@@ -53,11 +51,35 @@ GLuint createShaderProgram(const char* vertexPath, const char* fragmentPath)
     {
         char infoLog[512];
         glGetProgramInfoLog(program, 512, nullptr, infoLog);
-        std::cerr << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+        std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
     }
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+
+    return program;
+}
+
+// Function to compile and link a compute shader program
+GLuint createComputeShaderProgram(const char* computeSource)
+{
+    GLuint computeShader = compileShader(computeSource, GL_COMPUTE_SHADER);
+
+    GLuint program = glCreateProgram();
+    glAttachShader(program, computeShader);
+    glLinkProgram(program);
+
+    // Check for linking errors
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "ERROR::SHADER::COMPUTE_PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(computeShader);
 
     return program;
 }
