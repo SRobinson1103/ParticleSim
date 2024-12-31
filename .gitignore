@@ -398,3 +398,57 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+/build/
+/CMakeFiles/
+/*.dir/
+/*.vcxproj/
+/*.vcxproj.filters/
+/*.vcxproj.user/
+
+# Ignore CMake-generated files
+/CMakeCache.txt
+/CMakeLists.txt.user
+/Makefile
+/*.ninja
+
+# Ignore compiled object files and libraries
+/*.obj
+/*.o
+/*.lib
+/*.dll
+/*.so
+/*.a
+/*.out
+/*.exe
+
+# Ignore debug and log files
+*.log
+*.pdb
+*.idb
+
+# Ignore IDE-specific files
+.vscode/
+*.code-workspace
+*.sln
+*.db
+.idea/
+
+# Ignore GLAD and other generated source files (if generated in the build directory)
+glad/src/gl.c
+glad/include/glad.h
+glad/include/khrplatform.h
+
+# Ignore shaders compiled to binary formats
+*.spv
+
+# Ignore any temporary files
+*.tmp
+*.temp
+*.~*
+.DS_Store
+Thumbs.db
+
+# Ignore backup files
+*.bak
+*.swp
