@@ -14,6 +14,21 @@ std::string loadShaderSource(const char* filePath)
     return buffer.str();
 }
 
+// Utility function to load shader code from a file
+std::string loadShaderFromFile(const std::string& filepath)
+{
+    std::ifstream file(filepath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open shader file " << filepath << std::endl;
+        return "";
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
 // Function to compile a shader
 GLuint compileShader(const char* source, GLenum shaderType)
 {
