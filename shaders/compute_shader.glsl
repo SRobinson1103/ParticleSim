@@ -35,18 +35,18 @@ void main()
     {
         float randOffsetX = (fract(sin(float(gl_GlobalInvocationID.x * 1234)) * 43758.5453123) - 0.5) * 0.05; // Spread within -0.025 to 0.025
         float randOffsetY = (fract(sin(float(gl_GlobalInvocationID.x * 5678)) * 43758.5453123) - 0.5) * 0.05; // Spread within -0.025 to 0.025
-        randOffsetX *= 1000;
-        randOffsetY *= 1000;
+        randOffsetX *= 100;
+        randOffsetY *= 100;
         randOffsetX = trunc(randOffsetX);
         randOffsetY = trunc(randOffsetY);
-        randOffsetX /= 1000;
-        randOffsetY /= 1000;
+        randOffsetX /= 100;
+        randOffsetY /= 100;
 
         newParticles[offset + 0] = mousePosition.x + randOffsetX; // x
         newParticles[offset + 1] = mousePosition.y + randOffsetY; // y
         newParticles[offset + 5] = 0.0; // vx
         newParticles[offset + 7] = 1.0; // state (active)
-        newParticles[offset + 8] = 0.01414; //radius
+        newParticles[offset + 8] = 0.1414; //radius
         newParticles[offset + 9] = mouseButton; //particle type
 
         if (mouseButton == 1) //sand
@@ -54,28 +54,28 @@ void main()
             newParticles[offset + 2] = 1.0;
             newParticles[offset + 3] = 1.0;
             newParticles[offset + 4] = 0.0;
-            newParticles[offset + 6] = -0.001; // vy
+            newParticles[offset + 6] = -0.01; // vy
         }
         else if (mouseButton == 2) //water
         {
             newParticles[offset + 2] = 0.0;
             newParticles[offset + 3] = 0.0;
             newParticles[offset + 4] = 1.0;
-            newParticles[offset + 6] = -0.001; // vy
+            newParticles[offset + 6] = -0.01; // vy
         }
         else if (mouseButton == 3) //smoke
         {
             newParticles[offset + 2] = 0.5;
             newParticles[offset + 3] = 0.5;
             newParticles[offset + 4] = 0.5;
-            newParticles[offset + 6] = 0.001; // vy
+            newParticles[offset + 6] = 0.01; // vy
         }
         else
         {
             newParticles[offset + 2] = 1.0;
             newParticles[offset + 3] = 1.0;
             newParticles[offset + 4] = 1.0;
-            newParticles[offset + 6] = 0.001; // vy
+            newParticles[offset + 6] = 0.01; // vy
         }
         
     }
@@ -111,7 +111,7 @@ void main()
             float otherX = particles[otherOffset + 0];
             float otherY = particles[otherOffset + 1];
         
-            if ((y - otherY) <= 0.0011 && abs(x - otherX) <= 0.0001) //particle is above another particle
+            if ((y - 0.01 - otherY) <= 0.001  && y > otherY && abs(x - otherX) <= 0.001) //particle is above another particle
             {
                 newParticles[offset + 1] = y;
                 break;

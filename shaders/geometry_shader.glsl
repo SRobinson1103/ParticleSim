@@ -13,7 +13,7 @@ void main()
     vec2 center = particlePosition[0]; // Center of the square
     vec3 color = particleColor[0];     // Color of the particle
 
-    float size = 0.001; // Half size of the square
+    float size = 0.01; // Half size of the square
 
     // Define square vertices
     vec2 offsets[4] = vec2[](
