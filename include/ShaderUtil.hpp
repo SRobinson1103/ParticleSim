@@ -49,13 +49,15 @@ GLuint compileShader(const char* source, GLenum shaderType)
 }
 
 // Function to create and link a shader program
-GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
+GLuint createShaderProgram(const char* vertexSource, const char* geometrySource, const char* fragmentSource)
 {
     GLuint vertexShader = compileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint geometryShader = compileShader(geometrySource, GL_GEOMETRY_SHADER);
     GLuint fragmentShader = compileShader(fragmentSource, GL_FRAGMENT_SHADER);
 
     GLuint program = glCreateProgram();
     glAttachShader(program, vertexShader);
+    glAttachShader(program, geometryShader);
     glAttachShader(program, fragmentShader);
     glLinkProgram(program);
 
@@ -70,6 +72,7 @@ GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
     }
 
     glDeleteShader(vertexShader);
+    glDeleteShader(geometryShader);
     glDeleteShader(fragmentShader);
 
     return program;

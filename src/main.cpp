@@ -18,15 +18,23 @@ void processInput(GLFWwindow* window)
         glfwSetWindowShouldClose(window, true);
 }
 
-bool isLeftMousePressed = false;
+bool isMousePressed = false;
+int mouseButton = 0;
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
-    if (button == GLFW_MOUSE_BUTTON_LEFT)
+    if (button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_MIDDLE || button == GLFW_MOUSE_BUTTON_RIGHT)
     {
+        if (button == GLFW_MOUSE_BUTTON_LEFT)
+            mouseButton = 1;
+        else if (button == GLFW_MOUSE_BUTTON_MIDDLE)
+            mouseButton = 2;
+        else if (button == GLFW_MOUSE_BUTTON_RIGHT)
+            mouseButton = 3;
+
         if (action == GLFW_PRESS)
-            isLeftMousePressed = true;
+            isMousePressed = true;
         else if (action == GLFW_RELEASE)
-            isLeftMousePressed = false;
+            isMousePressed = false;
     }
 }
 
@@ -78,12 +86,14 @@ int main()
     // Create shader program
     std::string vertexShaderSource = loadShaderFromFile("..\\shaders\\vertex_shader.glsl");
     std::string fragmentShaderSource = loadShaderFromFile("..\\shaders\\fragment_shader.glsl");
+    std::string geometryShaderSource = loadShaderFromFile("..\\shaders\\geometry_shader.glsl");
     std::string computeShaderSource = loadShaderFromFile("..\\shaders\\compute_shader.glsl");
     const char* vertexSourceCStr = vertexShaderSource.c_str();
     const char* fragmentSourceCStr = fragmentShaderSource.c_str();
+    const char* geometrySourceCStr = geometryShaderSource.c_str();
     const char* computeSourceCStr = computeShaderSource.c_str();
 
-    GLuint shaderProgram = createShaderProgram(vertexSourceCStr, fragmentSourceCStr);
+    GLuint shaderProgram = createShaderProgram(vertexSourceCStr, geometrySourceCStr, fragmentSourceCStr);
     GLuint computeProgram = createComputeShaderProgram(computeSourceCStr);
 
     // Set up vertex array object (VAO)
@@ -124,7 +134,7 @@ int main()
         // Input
         processInput(window);
 
-        if (isLeftMousePressed)
+        if (isMousePressed)
         {
             particleOffset = std::min((particleOffset + particlesToCreate), maxParticles);
         }
@@ -141,7 +151,8 @@ int main()
         glUseProgram(computeProgram);
         // Pass uniforms
         glUniform2f(glGetUniformLocation(computeProgram, "mousePosition"), normalizedMouseX, normalizedMouseY);
-        glUniform1i(glGetUniformLocation(computeProgram, "createParticles"), isLeftMousePressed ? 1 : 0);
+        glUniform1i(glGetUniformLocation(computeProgram, "mouseButton"), mouseButton);
+        glUniform1i(glGetUniformLocation(computeProgram, "createParticles"), isMousePressed ? 1 : 0);
         glUniform1i(glGetUniformLocation(computeProgram, "particleOffset"), particleOffset - particlesToCreate);
         glUniform1i(glGetUniformLocation(computeProgram, "maxParticles"), maxParticles);
         glUniform1i(glGetUniformLocation(computeProgram, "particlesToCreate"), particlesToCreate);
@@ -162,7 +173,7 @@ int main()
         // Render particles as points
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
-        glDrawArraysInstanced(GL_TRIANGLES, 0, 3, activeParticles);
+        glDrawArraysInstanced(GL_POINTS, 0, 1, activeParticles);
 
         currentSSBO = 1 - currentSSBO;
 
