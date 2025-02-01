@@ -1,213 +1,205 @@
- #version 450 core
+#version 450 core
+layout(local_size_x = 256) in; // Must match C++ workGroupSize
 
-layout(local_size_x = 256, local_size_y = 1) in;
-
-layout(std430, binding = 0) buffer ReadBuffer {
-    float particles[];
-};
-
-layout(std430, binding = 1) buffer WriteBuffer {
-    float newParticles[];
-};
-
-uniform vec2 mousePosition;
-uniform int mouseButton;
-uniform int createParticles;
-uniform int particlesToCreate;
-uniform int particleOffset;
-uniform int maxParticles;
-uniform float gravity;
-uniform float damping;
-
-int randomInt(uint seed)
+struct Particle
 {
-    float random = fract(sin(float(seed)) * 43758.5453123);
-    return int(random * 201.0) - 100; // Scale to [-100, 100]
+    vec2 position;
+    vec2 velocity;
+    vec3 color;
+    float size;
+    float isActive;
+};
+
+// Input/output buffers as arrays of Particle structs
+layout(std430, binding = 0) buffer ParticleBufferIn { Particle particlesIn[]; };
+layout(std430, binding = 1) buffer ParticleBufferOut { Particle particlesOut[]; };
+
+// particle counts per cell. Flattened 2D grid: grid[gridCell.x + gridCell.y * gridWidth]
+layout(std430, binding = 2) buffer GridBuffer { uint grid[]; };
+
+// [gridIndex][particleIndex] = particleID
+layout(std430, binding = 3) buffer GridParticlesBuffer { uint gridParticles[]; };
+
+uniform vec2 mousePosition;         // Mouse position in clip space
+uniform int mouseButton;            // Mouse button
+
+uniform int createParticles;        // 1 = spawn particles, 0 = no
+uniform int particleOffset;         // Offset in the buffer for new particles
+uniform uint particlesToCreate;     // Number of particles to spawn per frame
+uniform uint maxParticles;          // Max possible particles
+uniform uint gridWidth;             // the width of the grid, = 2.0 / cellsize
+uniform uint maxParticlesPerCell;   // 
+
+uniform float minSpacing = 0.0005;  // Minimum distance between particles
+uniform float cellSize;             // size of a single cell in the grid
+uniform float gravity;              //
+uniform float damping;              //
+uniform float time;                 // For random
+uniform float spawnRadius;          // Radius around mouse
+
+uniform float groundY = -1.0;       // Y-coordinate of the ground (e.g., bottom of window)
+uniform float groundBounce = 0.5;   // Bounce factor (0.0 = no bounce, 1.0 = perfect bounce)
+uniform float groundFriction = 0.8; // Horizontal friction (0.0 = full stop, 1.0 = no friction)
+
+// Random hash
+// seed = particleID + time
+float hash(uint seed)
+{
+    return fract(sin(float(seed) * 12.9898 + time) * 43758.5453);
 }
 
+void main() {
+    uint particleID = gl_GlobalInvocationID.x;
 
-void main()
-{
-    uint index = gl_GlobalInvocationID.x;
-    uint offset = index * 10; // Calculate the buffer offset for the particle
-
-    if (createParticles == 1 && gl_GlobalInvocationID.x > uint(particleOffset) && gl_GlobalInvocationID.x <= uint(particleOffset + particlesToCreate))
+    // Spawn new particles
+    if (createParticles == 1 && particleID >= particleOffset && particleID < particleOffset + particlesToCreate)
     {
-        float randOffsetX = (fract(sin(float(gl_GlobalInvocationID.x * 1234)) * 43758.5453123) - 0.5) * 0.05; // Spread within -0.025 to 0.025
-        float randOffsetY = (fract(sin(float(gl_GlobalInvocationID.x * 5678)) * 43758.5453123) - 0.5) * 0.05; // Spread within -0.025 to 0.025
-        randOffsetX *= 100;
-        randOffsetY *= 100;
-        randOffsetX = trunc(randOffsetX);
-        randOffsetY = trunc(randOffsetY);
-        randOffsetX /= 100;
-        randOffsetY /= 100;
+        // Generate random spawn position around mouse
+        float angle = hash(particleID) * 6.283185307; // 0-2PI
+        float radius = hash(particleID + 1) * 0.1;    // Spawn radius
+        vec2 spawnPos = mousePosition + vec2(cos(angle), sin(angle)) * radius;
 
-        newParticles[offset + 0] = mousePosition.x + randOffsetX; // x
-        newParticles[offset + 1] = mousePosition.y + randOffsetY; // y
-        newParticles[offset + 5] = 0.0; // vx
-        newParticles[offset + 7] = 1.0; // state (active)
-        newParticles[offset + 8] = 0.1414; //radius
-        newParticles[offset + 9] = mouseButton; //particle type
+        bool canSpawn = true;
+        ivec2 spawnCell = ivec2(spawnPos / cellSize);
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                ivec2 neighborCell = spawnCell + ivec2(dx, dy);
+                uint neighborIndex = neighborCell.x + neighborCell.y * gridWidth;
+                for (uint i = 0; i < grid[neighborIndex]; i++)
+                {
+                    uint otherID = gridParticles[neighborIndex * maxParticlesPerCell + i];
+                    Particle other = particlesIn[otherID];
+                    if (distance(spawnPos, other.position) < minSpacing)
+                    {
+                        canSpawn = false;
+                        break;
+                    }
+                }
+            }
+        }
 
-        if (mouseButton == 1) //sand
+        // Spawn particle if no overlap
+        if (canSpawn)
         {
-            newParticles[offset + 2] = 1.0;
-            newParticles[offset + 3] = 1.0;
-            newParticles[offset + 4] = 0.0;
-            newParticles[offset + 6] = -0.01; // vy
-        }
-        else if (mouseButton == 2) //water
-        {
-            newParticles[offset + 2] = 0.0;
-            newParticles[offset + 3] = 0.0;
-            newParticles[offset + 4] = 1.0;
-            newParticles[offset + 6] = -0.01; // vy
-        }
-        else if (mouseButton == 3) //smoke
-        {
-            newParticles[offset + 2] = 0.5;
-            newParticles[offset + 3] = 0.5;
-            newParticles[offset + 4] = 0.5;
-            newParticles[offset + 6] = 0.01; // vy
+            particlesOut[particleID].position = spawnPos;
+            particlesOut[particleID].velocity = vec2(cos(angle), sin(angle)) * 0.01;
+            particlesOut[particleID].color = vec3(1.0, 0.0, 0.0);
+            particlesOut[particleID].size = 0.01;
+            particlesOut[particleID].isActive = 1.0;
+
+            if (particlesOut[particleID].position.y - particlesOut[particleID].size < groundY)
+            {
+                particlesOut[particleID].position.y = groundY + particlesOut[particleID].size; // Clamp to ground level
+            }
         }
         else
         {
-            newParticles[offset + 2] = 1.0;
-            newParticles[offset + 3] = 1.0;
-            newParticles[offset + 4] = 1.0;
-            newParticles[offset + 6] = 0.01; // vy
+            particlesOut[particleID].isActive = 0.0;
         }
-        
+        return;
     }
-    else if (particles[offset + 7] == 1.0) // Update only active particles
+
+    // Update existing particle physics
+    Particle pIn = particlesIn[particleID];
+    if (pIn.isActive != 1.0)
     {
-        //Read particle data
-        float x = particles[offset + 0]; // x position
-        float y = particles[offset + 1]; // y position
-        float vx = particles[offset + 5]; // x velocity
-        float vy = particles[offset + 6]; // y velocity
-    
-        //vy += gravity;
-        //vx *= damping;
-        //vy *= damping;
-    
-        if (x > 1.0) x = -1.0;
-        if (x < -1.0) x = 1.0;
-        if (y >= 0.99) y = 0.99;
-        if (y <= -0.99) y = -0.99;
+        particlesOut[particleID] = pIn;
+        return;
+    }
 
-        // Write back updated particle data
-        newParticles[offset + 0] = x + vx; // Update x position
-        newParticles[offset + 1] = y + vy; // Update y position
-        newParticles[offset + 5] = vx;
-        newParticles[offset + 6] = vy;
-        newParticles[offset + 7] = 1.0;
+    pIn.velocity.y += gravity;
+    pIn.velocity *= damping;
+    pIn.position += pIn.velocity;
 
-        for (uint i = 0; i < particleOffset + particlesToCreate; i++)
+    // Ground collision
+    float particleBottom = pIn.position.y - pIn.size;
+    if (particleBottom < groundY)
+    {
+        // Correct position to stay above ground
+        pIn.position.y = groundY + pIn.size;
+
+        // Bounce vertically with damping
+        pIn.velocity.y *= -groundBounce;
+
+        // Apply horizontal friction
+        pIn.velocity.x *= groundFriction;
+
+        // Stop tiny movements
+        if (length(pIn.velocity) < 0.0001)
         {
-            if (i == index) continue; // Skip self
-        
-            uint otherOffset = i * 10;
-            float otherX = particles[otherOffset + 0];
-            float otherY = particles[otherOffset + 1];
-        
-            if ((y - 0.01 - otherY) <= 0.001  && y > otherY && abs(x - otherX) <= 0.001) //particle is above another particle
-            {
-                newParticles[offset + 1] = y;
-                break;
-            }
-            //else
-            //{
-            //    x += vx;
-            //    y += vy;
-            //    break;
-            //}
+            pIn.velocity = vec2(0.0);
         }
     }
 
-    //else if (particles[offset + 7] == 1.0) // Update only active particles
-    //{
-    //    // Read particle data
-    //    float x = particles[offset + 0]; // x position
-    //    float y = particles[offset + 1]; // y position
-    //    float vx = particles[offset + 5]; // x velocity
-    //    float vy = particles[offset + 6]; // y velocity
-    //
-    //    vy += gravity;
-    //    vx *= damping;
-    //    vy *= damping;
-    //
-    //    // Update position with velocity
-    //    x += vx;
-    //    y += vy;
-    //
-    //    // Wrap around screen edges
-    //    if (x > 1.0) x = -1.0;
-    //    if (x < -1.0) x = 1.0;
-    //    if (y > 1.0) y = -1.0;
-    //    if (y < -1.0) y = 1.0;
-    //
-    //    // Write back updated particle data
-    //    newParticles[offset + 0] = x; // Update x position
-    //    newParticles[offset + 1] = y; // Update y position
-    //    newParticles[offset + 5] = vx;
-    //    newParticles[offset + 6] = vy;
-    //    newParticles[offset + 7] = 1.0;
-    //}
-    //
-    //for (uint i = 0; i < particleOffset + particlesToCreate; i++)
-    //{
-    //    if (i == index) continue; // Skip self
-    //
-    //    float x = particles[offset + 0];
-    //    float y = particles[offset + 1];
-    //    float vx = particles[offset + 5];
-    //    float vy = particles[offset + 6];
-    //
-    //    uint otherOffset = i * 10;
-    //    float otherX = particles[otherOffset + 0];
-    //    float otherY = particles[otherOffset + 1];
-    //    float otherRadius = particles[otherOffset + 8]; // Assuming radius is stored at offset + 8
-    //
-    //    // Distance between particles
-    //    float dx = otherX - x;
-    //    float dy = otherY - y;
-    //    float distance = sqrt(dx * dx + dy * dy);
-    //    float radius = particles[offset + 8];
-    //
-    //    if (distance < (radius + otherRadius))
-    //    {
-    //        float otherVx = particles[otherOffset + 5];
-    //        float otherVy = particles[otherOffset + 6];
-    //
-    //        // Unit normal and tangent vectors
-    //        vec2 normal = normalize(vec2(dx, dy));
-    //        vec2 tangent = vec2(-normal.y, normal.x);
-    //
-    //        // Project velocities onto normal and tangent
-    //        float v1n = dot(normal, vec2(vx, vy));
-    //        float v2n = dot(normal, vec2(otherVx, otherVy));
-    //        float v1t = dot(tangent, vec2(vx, vy));
-    //        float v2t = dot(tangent, vec2(otherVx, otherVy));
-    //
-    //        // Elastic collision (swap normal components)
-    //        float v1nAfter = v2n;
-    //        float v2nAfter = v1n;
-    //
-    //        // Reconstruct velocities
-    //        vec2 v1nVec = v1nAfter * normal;
-    //        vec2 v1tVec = v1t * tangent;
-    //        vec2 v2nVec = v2nAfter * normal;
-    //        vec2 v2tVec = v2t * tangent;
-    //
-    //        vec2 newVelocity1 = v1nVec + v1tVec;
-    //        vec2 newVelocity2 = v2nVec + v2tVec;
-    //
-    //        // Apply new velocities
-    //        newParticles[offset + 5] = newVelocity1.x;
-    //        newParticles[offset + 6] = newVelocity1.y;
-    //        newParticles[otherOffset + 5] = newVelocity2.x;
-    //        newParticles[otherOffset + 6] = newVelocity2.y;
-    //    }
-    //}
+    // Update Grid
+    ivec2 gridCell = ivec2(pIn.position / cellSize);
+    uint gridIndex = gridCell.x + gridCell.y * gridWidth;
+
+    // Atomically increment grid cell count and store particle ID
+    uint index = atomicAdd(grid[gridIndex], 1);
+    if (index < maxParticlesPerCell)
+    {
+        gridParticles[gridIndex * maxParticlesPerCell + index] = particleID;
+    }
+
+    // Collision Avoidance
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            ivec2 neighborCell = gridCell + ivec2(dx, dy);
+            uint neighborIndex = neighborCell.x + neighborCell.y * gridWidth;
+
+            // Iterate over particles in neighbor cell
+            for (uint i = 0; i < grid[neighborIndex]; i++)
+            {
+                uint otherID = gridParticles[neighborIndex * maxParticlesPerCell + i];
+                if (otherID == particleID) continue;
+
+                Particle other = particlesIn[otherID];
+                vec2 delta = pIn.position - other.position;
+                float dist = length(delta);
+                if (dist < minSpacing)
+                {
+                    // Repulsion force
+                    pIn.velocity += normalize(delta) * 0.01;
+                }
+            }
+        }
+    }
+
+    particlesOut[particleID] = pIn;
+
+    /*
+    // Apply gravity and damping
+    pIn.velocity.y += -0.0001; // Small downward gravity
+    pIn.velocity *= 0.99;      // Damping
+
+    // Update position
+    pIn.position += pIn.velocity;
+    if(pIn.position.x >= 1.0)
+    {
+        pIn.position.x = 1.0;
+        pIn.velocity.x = 0.0;
+    }
+    if(pIn.position.x <= -1.0)
+    {
+        pIn.position.x = -1.0;
+        pIn.velocity.x = 0.0;
+    }
+    if(pIn.position.y >= 1.0)
+    {
+        pIn.position.y = 1.0;
+        pIn.velocity.x = 0.0;
+    }
+    if(pIn.position.y <= -1.0)
+    {
+        pIn.position.y = -1.0;
+        pIn.velocity.y = 0.0;
+    }
+
+    particlesOut[particleID] = pIn;
+    */
 }

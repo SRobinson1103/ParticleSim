@@ -6,15 +6,6 @@
 #include <fstream>
 #include <sstream>
 
-std::string loadShaderSource(const char* filePath)
-{
-    std::ifstream file(filePath);
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
-
-// Utility function to load shader code from a file
 std::string loadShaderFromFile(const std::string& filepath)
 {
     std::ifstream file(filepath);
@@ -26,10 +17,10 @@ std::string loadShaderFromFile(const std::string& filepath)
 
     std::stringstream buffer;
     buffer << file.rdbuf();
+    file.close();
     return buffer.str();
 }
 
-// Function to compile a shader
 GLuint compileShader(const char* source, GLenum shaderType)
 {
     GLuint shader = glCreateShader(shaderType);
@@ -48,7 +39,6 @@ GLuint compileShader(const char* source, GLenum shaderType)
     return shader;
 }
 
-// Function to create and link a shader program
 GLuint createShaderProgram(const char* vertexSource, const char* geometrySource, const char* fragmentSource)
 {
     GLuint vertexShader = compileShader(vertexSource, GL_VERTEX_SHADER);
@@ -78,7 +68,32 @@ GLuint createShaderProgram(const char* vertexSource, const char* geometrySource,
     return program;
 }
 
-// Function to compile and link a compute shader program
+GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
+{
+    GLuint vertexShader = compileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint fragmentShader = compileShader(fragmentSource, GL_FRAGMENT_SHADER);
+
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+    glLinkProgram(program);
+
+    // Check for linking errors
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return program;
+}
+
 GLuint createComputeShaderProgram(const char* computeSource)
 {
     GLuint computeShader = compileShader(computeSource, GL_COMPUTE_SHADER);
