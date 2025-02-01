@@ -9,6 +9,8 @@
 *.sln
 /glm-1.0.1/
 /out/
+/glfw-3.4/
+/glm-1.0.1/
 
 # User-specific files
 *.rsuser
