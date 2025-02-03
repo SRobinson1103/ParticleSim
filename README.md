@@ -1,8 +1,4 @@
-Experimenting with an opengl particle system.
+opengl particle system.
 
-![image](https://github.com/user-attachments/assets/39ccc41d-8e6b-41eb-a63b-03d57561d8e8)
+![image](https://github.com/user-attachments/assets/ab58a817-5e03-4127-a866-ed31732b2302)
 
-mkdir build
-cd build
-cmake ..
-cmake -G "Visual Studio 17 2022" ..
