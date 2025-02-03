@@ -7,10 +7,12 @@
 *.vcxproj.filters
 *.vcxproj.user
 *.sln
+*.cmake
 /glm-1.0.1/
 /out/
 /glfw-3.4/
 /glm-1.0.1/
+/glad/
 
 # User-specific files
 *.rsuser

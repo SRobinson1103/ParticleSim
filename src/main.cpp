@@ -1,4 +1,5 @@
 #include "ShaderUtil.hpp"
+#include "GridLines.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -20,8 +21,13 @@ void processInput(GLFWwindow* window);
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
 void cursor_position_callback(GLFWwindow* window, double xpos, double ypos);
 
+void dispatchFirstCompute(int activeGroups);
+void dispatchSecondCompute(int activeGroups);
+
 GLFWwindow* window;
-GLuint shaderProgram, computeProgram;
+int windowWidth = 800;
+int windowHeight = 600;
+GLuint shaderProgram, computeProgramFirst, computeProgramSecond;
 double mouseX, mouseY;
 bool isMousePressed = false;
 int mouseButton = 0;
@@ -31,13 +37,14 @@ GLuint ssbo[2];
 GLuint gridSSBO, gridParticlesSSBO;
 
 int particleOffset = 0;
-glm::uint particlesToCreate = 10;
-glm::uint maxParticles = 4000000;
-glm::uint maxParticlesPerCell = 2;
-glm::uint gridWidth = 2000;
-float cellSize = 0.001;
+constexpr float cellSize = 0.004f;
+constexpr glm::uint gridWidth = static_cast<glm::uint>(2.0f / cellSize);
+constexpr glm::uint maxParticles = gridWidth * gridWidth;
+glm::uint particlesToCreate = 128;
+glm::uint maxParticlesPerCell = 4;
+
 const int workGroupSize = 256; // Must match local_size_x in compute shader
-GLint maxWorkGroups[3];
+//GLint maxWorkGroups[3];
 
 struct Particle
 {
@@ -46,10 +53,12 @@ struct Particle
     glm::vec3 color;    //[4, 5, 6]
     float size;         //[7]
     float active;       //[8]
+    float resting;      //[9]
 };
 
 // Quad vertices (x,y)
-float quadVertices[] = {
+float quadVertices[] =
+{
     -0.5f, -0.5f,
      0.5f, -0.5f,
     -0.5f,  0.5f,
@@ -65,8 +74,10 @@ int main()
     initializeParticleBuffers();
 
     //calculate max particles
-    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxWorkGroups[0]);
+    //glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxWorkGroups[0]);
     //maxParticles = maxWorkGroups[0] * workGroupSize;
+
+    //initGridLines(cellSize);
 
     renderLoop();
 
@@ -79,6 +90,8 @@ int main()
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
+    windowWidth = width;
+    windowHeight = height;
 }
 
 void processInput(GLFWwindow* window)
@@ -144,19 +157,21 @@ void loadShaders()
 {
     std::string vertexShaderSource = loadShaderFromFile(".\\shaders\\vertex_shader.glsl");
     std::string fragmentShaderSource = loadShaderFromFile(".\\shaders\\fragment_shader.glsl");
-    std::string computeShaderSource = loadShaderFromFile(".\\shaders\\compute_shader.glsl");
+    std::string computeShaderSource1 = loadShaderFromFile(".\\shaders\\compute_shader.glsl");
+    std::string computeShaderSource2 = loadShaderFromFile(".\\shaders\\compute_shader2.glsl");
 
     const char* vertexSourceCStr = vertexShaderSource.c_str();
     const char* fragmentSourceCStr = fragmentShaderSource.c_str();
-    const char* computeSourceCStr = computeShaderSource.c_str();
+    const char* computeSourceCStr1 = computeShaderSource1.c_str();
+    const char* computeSourceCStr2 = computeShaderSource2.c_str();
 
     shaderProgram = createShaderProgram(vertexSourceCStr, fragmentSourceCStr);
-    computeProgram = createComputeShaderProgram(computeSourceCStr);
+    computeProgramFirst = createComputeShaderProgram(computeSourceCStr1);
+    computeProgramSecond = createComputeShaderProgram(computeSourceCStr2);
 }
 
 void initializeParticleBuffers()
 {
-    // Create VBO and VAO for the quad
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
 
@@ -164,31 +179,68 @@ void initializeParticleBuffers()
     glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-    // Position attribute XY
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0); // Position attribute (x,y)
     glEnableVertexAttribArray(0);
-    // UV attribute for texturing
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
     glBindVertexArray(0);
-
+    
     glGenBuffers(2, ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[0]);
     glBufferData(GL_SHADER_STORAGE_BUFFER, maxParticles * sizeof(Particle), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[1]);
     glBufferData(GL_SHADER_STORAGE_BUFFER, maxParticles * sizeof(Particle), nullptr, GL_DYNAMIC_DRAW);
 
-
     glGenBuffers(1, &gridSSBO);
     glGenBuffers(1, &gridParticlesSSBO);
-
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, gridWidth * gridWidth * sizeof(glm::uint), nullptr, GL_DYNAMIC_DRAW);
-
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridParticlesSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, gridWidth * gridWidth * maxParticlesPerCell * sizeof(glm::uint), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridParticlesSSBO);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void dispatchFirstCompute(int activeGroups)
+{
+    float normalizedMouseX = static_cast<float>((mouseX / windowWidth) * 2.0f - 1.0f);
+    float normalizedMouseY = static_cast<float>(-((mouseY / windowHeight) * 2.0f - 1.0f));
+
+    glUseProgram(computeProgramFirst);
+    // Pass uniforms
+    glUniform2f(glGetUniformLocation(computeProgramFirst, "mousePosition"), normalizedMouseX, normalizedMouseY);
+    glUniform1i(glGetUniformLocation(computeProgramFirst, "mouseButton"), mouseButton);
+
+    glUniform1i(glGetUniformLocation(computeProgramFirst, "createParticles"), isMousePressed ? 1 : 0);
+    glUniform1i(glGetUniformLocation(computeProgramFirst, "particleOffset"), particleOffset - particlesToCreate);
+
+    glUniform1ui(glGetUniformLocation(computeProgramFirst, "particlesToCreate"), particlesToCreate);
+    glUniform1ui(glGetUniformLocation(computeProgramFirst, "maxParticles"), maxParticles);
+    glUniform1ui(glGetUniformLocation(computeProgramFirst, "maxParticlesPerCell"), maxParticlesPerCell);
+
+    glUniform1ui(glGetUniformLocation(computeProgramFirst, "gridWidth"), gridWidth);
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "cellSize"), cellSize);
+
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "gravity"), -0.0001f);
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "damping"), 0.975f);
+    float currentTime = static_cast<float>(glfwGetTime());
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "time"), currentTime);
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "spawnRadius"), 0.0001f);
+
+    glDispatchCompute(activeGroups, 1, 1);
+
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure compute writes are visible
+}
+void dispatchSecondCompute(int activeGroups)
+{
+    glUseProgram(computeProgramSecond);
+    glUniform1ui(glGetUniformLocation(computeProgramSecond, "maxParticlesPerCell"), maxParticlesPerCell);
+    glUniform1ui(glGetUniformLocation(computeProgramSecond, "gridWidth"), gridWidth);
+    glUniform1f(glGetUniformLocation(computeProgramSecond, "cellSize"), cellSize);
+
+    glDispatchCompute(activeGroups, 1, 1);
+
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure compute writes are visible
 }
 
 void renderLoop()
@@ -204,45 +256,21 @@ void renderLoop()
             particleOffset = std::min((particleOffset + particlesToCreate), maxParticles);
         }
 
-        float normalizedMouseX = (mouseX / 800.0) * 2.0f - 1.0f;
-        float normalizedMouseY = -((mouseY / 600.0) * 2.0f - 1.0f);
-
+        // Clear the gridSSBO and gridParticlesSSBO
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridSSBO);
+        glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridParticlesSSBO);
         glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        // Use the current SSBO for compute shader updates
+        // Use the current SSBO for compute shader updates, use the next SSBO for writing
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo[currentSSBO]); //read
-        // use the next SSBO for writing
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo[1 - currentSSBO]); //write
-
-        glUseProgram(computeProgram);
-        // Pass uniforms
-        glUniform2f(glGetUniformLocation(computeProgram, "mousePosition"), normalizedMouseX, normalizedMouseY);
-        glUniform1i(glGetUniformLocation(computeProgram, "mouseButton"), mouseButton);
-
-        glUniform1i(glGetUniformLocation(computeProgram, "createParticles"), isMousePressed ? 1 : 0);
-        glUniform1i(glGetUniformLocation(computeProgram, "particleOffset"), particleOffset - particlesToCreate);
-
-        glUniform1ui(glGetUniformLocation(computeProgram, "particlesToCreate"), particlesToCreate);
-        glUniform1ui(glGetUniformLocation(computeProgram, "maxParticles"), maxParticles);
-        glUniform1ui(glGetUniformLocation(computeProgram, "maxParticlesPerCell"), maxParticlesPerCell);
-
-        glUniform1ui(glGetUniformLocation(computeProgram, "gridWidth"), gridWidth);
-        glUniform1f(glGetUniformLocation(computeProgram, "cellSize"), cellSize);
-
-        glUniform1f(glGetUniformLocation(computeProgram, "gravity"), -0.001f);
-        glUniform1f(glGetUniformLocation(computeProgram, "damping"), 0.975f);
-        float currentTime = glfwGetTime();
-        glUniform1f(glGetUniformLocation(computeProgram, "time"), currentTime);
-        glUniform1f(glGetUniformLocation(computeProgram, "spawnRadius"), 0.00001f);
 
         int activeParticles = particleOffset;
         int activeGroups = (activeParticles + workGroupSize - 1) / workGroupSize;
-        glDispatchCompute(activeGroups, 1, 1);
-
-        // Ensure compute writes are visible
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        dispatchFirstCompute(activeGroups);
+        dispatchSecondCompute(activeGroups);
 
         // Bind updated SSBO for rendering, vertex shader uses binding=0
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo[1 - currentSSBO]);
@@ -250,12 +278,14 @@ void renderLoop()
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Render particles as points
+        // Render particles as quads
         glUseProgram(shaderProgram);
         glBindVertexArray(quadVAO);
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, activeParticles);
 
         currentSSBO = 1 - currentSSBO; // Alternate between 0 and 1
+
+        drawGridLines();
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);
@@ -268,8 +298,10 @@ void cleanup()
     glDeleteVertexArrays(1, &quadVAO);
     glDeleteBuffers(2, ssbo);
     glDeleteBuffers(1, &quadVBO);
+    glDeleteBuffers(1, &gridSSBO);
+    glDeleteBuffers(1, &gridParticlesSSBO);
     glDeleteProgram(shaderProgram);
-    glDeleteProgram(computeProgram);
+    glDeleteProgram(computeProgramFirst);
 
     glfwDestroyWindow(window);
     glfwTerminate();

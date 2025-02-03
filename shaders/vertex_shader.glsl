@@ -7,6 +7,7 @@ struct Particle
     vec3 color;
     float size;
     float isActive;
+    float resting;
 };
 
 layout(std430, binding = 0) buffer ParticleBuffer
