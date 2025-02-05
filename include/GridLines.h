@@ -28,6 +28,18 @@ void initGridLines(float cellSize)
         gridVertices.push_back(glm::vec2(-1.0f, y));  // start of line
         gridVertices.push_back(glm::vec2(1.0f, y));   // end of line
     }
+    
+    // Forcing creation of lines at multiples of 0.25
+    
+    for (float x = -1.0f; x <= 1.0f; x += 0.25) {
+        gridVertices.push_back(glm::vec2(x, -1.0f));  // start of line
+        gridVertices.push_back(glm::vec2(x, 1.0f));  // end of line
+    }
+
+    for (float y = -1.0f; y <= 1.0f; y += 0.25) {
+        gridVertices.push_back(glm::vec2(-1.0f, y));  // start of line
+        gridVertices.push_back(glm::vec2(1.0f, y));   // end of line
+    }
 
     std::string vertexShaderSource = loadShaderFromFile(".\\shaders\\vert_shader_line.glsl");
     std::string fragmentShaderSource = loadShaderFromFile(".\\shaders\\frag_shader_line.glsl");

@@ -1,5 +1,8 @@
-#include "ShaderUtil.hpp"
+#include "ParticleGrid.h"
 #include "GridLines.h"
+#include "InputManager.h"
+#include "OpenGLWindow.h"
+#include "ShaderUtil.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -16,54 +19,17 @@ void initializeParticleBuffers();
 void renderLoop();
 void cleanup();
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void processInput(GLFWwindow* window);
-void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
-void cursor_position_callback(GLFWwindow* window, double xpos, double ypos);
-
 void dispatchFirstCompute(int activeGroups);
 void dispatchSecondCompute(int activeGroups);
 
-GLFWwindow* window;
-int windowWidth = 800;
-int windowHeight = 600;
 GLuint shaderProgram, computeProgramFirst, computeProgramSecond;
-double mouseX, mouseY;
-bool isMousePressed = false;
-int mouseButton = 0;
 
 GLuint quadVAO, quadVBO;
 GLuint ssbo[2];
 GLuint gridSSBO, gridParticlesSSBO;
 
-int particleOffset = 0;
-constexpr float cellSize = 0.004f;
-constexpr glm::uint gridWidth = static_cast<glm::uint>(2.0f / cellSize);
-constexpr glm::uint maxParticles = gridWidth * gridWidth;
-glm::uint particlesToCreate = 128;
-glm::uint maxParticlesPerCell = 4;
-
 const int workGroupSize = 256; // Must match local_size_x in compute shader
 //GLint maxWorkGroups[3];
-
-struct Particle
-{
-    glm::vec2 position; //[0, 1]
-    glm::vec2 velocity; //[2, 3]
-    glm::vec3 color;    //[4, 5, 6]
-    float size;         //[7]
-    float active;       //[8]
-    float resting;      //[9]
-};
-
-// Quad vertices (x,y)
-float quadVertices[] =
-{
-    -0.5f, -0.5f,
-     0.5f, -0.5f,
-    -0.5f,  0.5f,
-     0.5f,  0.5f
-};
 
 int main()
 {
@@ -77,80 +43,13 @@ int main()
     //glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxWorkGroups[0]);
     //maxParticles = maxWorkGroups[0] * workGroupSize;
 
-    //initGridLines(cellSize);
+    initGridLines(cellSize);
 
     renderLoop();
 
     cleanup();
 
     return EXIT_SUCCESS;
-}
-
-// Handle window resizing
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
-{
-    glViewport(0, 0, width, height);
-    windowWidth = width;
-    windowHeight = height;
-}
-
-void processInput(GLFWwindow* window)
-{
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-}
-
-void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
-{
-    if (button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_MIDDLE || button == GLFW_MOUSE_BUTTON_RIGHT)
-    {
-        mouseButton = button;
-
-        if (action == GLFW_PRESS)
-            isMousePressed = true;
-        else if (action == GLFW_RELEASE)
-            isMousePressed = false;
-    }
-}
-
-void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
-{
-    mouseX = xpos;
-    mouseY = ypos;
-}
-
-bool initOpenGL()
-{
-    if (!glfwInit())
-    {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
-        return false;
-    }
-
-    // Configure GLFW
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    window = glfwCreateWindow(800, 600, "Compute Shader Particle Simulation", nullptr, nullptr);
-    if (!window)
-    {
-        std::cerr << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return false;
-    }
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetCursorPosCallback(window, cursor_position_callback);
-
-    // Initialize GLAD
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    {
-        std::cerr << "Failed to initialize GLAD" << std::endl;
-        return false;
-    }
-    return true;
 }
 
 void loadShaders()
@@ -221,16 +120,17 @@ void dispatchFirstCompute(int activeGroups)
     glUniform1ui(glGetUniformLocation(computeProgramFirst, "gridWidth"), gridWidth);
     glUniform1f(glGetUniformLocation(computeProgramFirst, "cellSize"), cellSize);
 
-    glUniform1f(glGetUniformLocation(computeProgramFirst, "gravity"), -0.0001f);
-    glUniform1f(glGetUniformLocation(computeProgramFirst, "damping"), 0.975f);
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "gravity"), gravity);
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "damping"), damping);
     float currentTime = static_cast<float>(glfwGetTime());
     glUniform1f(glGetUniformLocation(computeProgramFirst, "time"), currentTime);
-    glUniform1f(glGetUniformLocation(computeProgramFirst, "spawnRadius"), 0.0001f);
+    glUniform1f(glGetUniformLocation(computeProgramFirst, "spawnRadius"), spawnRadius);
 
     glDispatchCompute(activeGroups, 1, 1);
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure compute writes are visible
 }
+
 void dispatchSecondCompute(int activeGroups)
 {
     glUseProgram(computeProgramSecond);

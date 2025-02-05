@@ -1,7 +1,9 @@
-// grid.frag
 #version 450 core
-out vec4 fragColor;
+
+in vec3 fragColor;
+out vec4 outColor;
+
 void main()
 {
-    fragColor = vec4(0.0); // white grid lines
+    outColor = vec4(fragColor, 1.0);
 }

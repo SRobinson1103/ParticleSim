@@ -38,7 +38,7 @@ uniform float damping;                //
 uniform float time;                   // For random
 uniform float spawnRadius;            // Radius around mouse
 
-uniform float groundY = -1.0;         // Y-coordinate of the ground (e.g., bottom of window)
+uniform float border = 1.0;           // length of half of the border
 uniform float groundBounce = 1.0;     // Bounce factor (0.0 = no bounce, 1.0 = perfect bounce)
 uniform float groundFriction = 0.8;   // Horizontal friction (0.0 = full stop, 1.0 = no friction)
 
@@ -58,7 +58,7 @@ void main()
     {
         // Generate random spawn position around mouse
         float angle = hash(particleID) * 6.283185307; // 0-2PI
-        float radius = hash(particleID + 1) * 0.1;    // Spawn radius
+        float radius = hash(particleID + 1) * spawnRadius;
         vec2 spawnPos = mousePosition + vec2(cos(angle), sin(angle)) * radius;
 
         bool canSpawn = true;
@@ -85,14 +85,15 @@ void main()
         //}
 
         // Below ground
-        if (particlesOut[particleID].position.y - particlesOut[particleID].size < groundY)
+        if (particlesOut[particleID].position.y - particlesOut[particleID].size < -border ||
+            abs(particlesOut[particleID].position.x) + particlesOut[particleID].size > border)
             canSpawn = false;
 
         // Spawn particle if no overlap and above ground
         if (canSpawn)
         {
             particlesOut[particleID].position = spawnPos;
-            particlesOut[particleID].velocity = vec2(cos(angle), sin(angle)) * 0.01;
+            particlesOut[particleID].velocity = vec2(cos(angle), sin(angle)) * 0.001;
             particlesOut[particleID].color = vec3(1.0, 0.0, 0.0);
             particlesOut[particleID].size = cellSize;
             particlesOut[particleID].isActive = 1.0;
@@ -115,34 +116,38 @@ void main()
         return;
     }
 
-    // ----------- UPDATE PHYSYCS -----------
+    // ----------- UPDATE PHYSICS -----------
+    float pRadius = pIn.size * 0.5;
     pIn.velocity.y += gravity;
     pIn.velocity *= damping;
+    pIn.velocity = clamp(pIn.velocity, -cellSize, cellSize); // limit velocity
     pIn.position += pIn.velocity;
 
     // Ground collision
-    float particleBottom = pIn.position.y - pIn.size * 0.5;
-    if (particleBottom <= groundY)
+    float particleBottom = pIn.position.y - pRadius;
+    if (particleBottom <= -border)
     {
         // Correct position to stay above ground
-        pIn.position.y = groundY + pIn.size * 0.5;
+        pIn.position.y = -border + pRadius;
         // Bounce vertically
         pIn.velocity.y *= -groundBounce;
         // Apply horizontal friction
         pIn.velocity.x *= groundFriction;
+    }
 
-        if (abs(pIn.velocity.y) < 0.01)
-        {
-            pIn.velocity.y = 0.0;
-            pIn.resting = 1.0;
-        }
+    // Side wall collision
+    if (abs(pIn.position.x) + pRadius > border)
+    {
+        pIn.position.x = clamp(pIn.position.x, -border + pRadius, border - pRadius);
+        pIn.velocity.x *= -1.0;
     }
 
     // apply updates
     particlesOut[particleID] = pIn;
 
     // ----------- BUILD GRID -----------
-    ivec2 gridCell = ivec2((pIn.position + vec2(1.0)) / cellSize);
+    ivec2 gridCell = ivec2((pIn.position + vec2(1.0, 1.0)) / cellSize);
+    gridCell = clamp(gridCell, ivec2(0), ivec2(gridWidth - 1));
     uint gridIndex = uint(gridCell.x + gridCell.y * gridWidth);
 
     // Atomically increment the cell count and store this particle's id
