@@ -3,6 +3,7 @@ layout(local_size_x = 256) in; // Must match C++ workGroupSize
 
 struct Particle
 {
+    uint id;
     vec2 position;
     vec2 velocity;
     vec3 color;
@@ -119,8 +120,8 @@ void main()
     // ----------- UPDATE PHYSICS -----------
     float pRadius = pIn.size * 0.5;
     pIn.velocity.y += gravity;
+    pIn.velocity = clamp(pIn.velocity, vec2(-cellSize/2, -cellSize/2), vec2(cellSize/2, cellSize/2)); // limit velocity
     pIn.velocity *= damping;
-    pIn.velocity = clamp(pIn.velocity, -cellSize, cellSize); // limit velocity
     pIn.position += pIn.velocity;
 
     // Ground collision
@@ -130,7 +131,7 @@ void main()
         // Correct position to stay above ground
         pIn.position.y = -border + pRadius;
         // Bounce vertically
-        pIn.velocity.y *= -groundBounce;
+        pIn.velocity.y = 0.0;
         // Apply horizontal friction
         pIn.velocity.x *= groundFriction;
     }
@@ -147,7 +148,6 @@ void main()
 
     // ----------- BUILD GRID -----------
     ivec2 gridCell = ivec2((pIn.position + vec2(1.0, 1.0)) / cellSize);
-    gridCell = clamp(gridCell, ivec2(0), ivec2(gridWidth - 1));
     uint gridIndex = uint(gridCell.x + gridCell.y * gridWidth);
 
     // Atomically increment the cell count and store this particle's id

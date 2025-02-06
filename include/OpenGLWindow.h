@@ -7,8 +7,8 @@
 #include <iostream>
 
 GLFWwindow* window;
-int windowWidth = 800;
-int windowHeight = 600;
+int windowWidth = 1080;
+int windowHeight = 1080;
 
 bool initOpenGL();
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -26,7 +26,7 @@ bool initOpenGL()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(800, 600, "Compute Shader Particle Simulation", nullptr, nullptr);
+    window = glfwCreateWindow(windowWidth, windowHeight, "Compute Shader Particle Simulation", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;

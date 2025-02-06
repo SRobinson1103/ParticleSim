@@ -3,6 +3,7 @@ layout(local_size_x = 256) in; // Must match C++ workGroupSize
 
 struct Particle
 {
+    uint id;
     vec2 position;
     vec2 velocity;
     vec3 color;
@@ -25,102 +26,81 @@ uniform float cellSize;
 uniform uint gridWidth;
 uniform uint maxParticlesPerCell;
 uniform float collisionResponseFactor = 0.5;
-uniform float restingThreshold = 0.005;
+uniform float restingThreshold = 0.002;
 
 void main()
 {
     uint particleID = gl_GlobalInvocationID.x;
+    Particle previous = particlesIn[particleID];
     Particle p = particles[particleID];
 
     if (p.isActive != 1.0) return;
 
-    //vec2 lastPos = particlesIn.position;
-    //ivec2 currentGridCell = ivec2((p.position + vec2(1.0)) / cellSize);
-    //ivec2 previousGridCell = ivec2((pLast.position + vec2(1.0)) / cellSize);
-    //ivec2 vel = currentGridCell - previousGridCell;
-    //
-    //while (previousGridCell != currentGridCell)
-    //{
-    //    ivec2 nextCell = previousGridCell + vel;
-    //    uint cellIndex = uint(nextCell.x + nextCell.y * gridWidth);
-    //    if (grid[cellIndex] > 0) //collision
-    //    {
-    //        p.velocity = vec2(0.0);
-    //    }
-    //
-    //    previousGridCell += vel;
-    //}
-
-
     // Remap the particle position from simulation space [-1,1] to grid-space.
     ivec2 gridCell = ivec2((p.position + vec2(1.0, 1.0)) / cellSize);
-    gridCell = clamp(gridCell, ivec2(0), ivec2(gridWidth - 1));
+    ivec2 lastGridCell = ivec2((previous.position + vec2(1.0, 1.0)) / cellSize);
 
     bool supportFound = false;
     bool aboveAnother = false;
-    // Check for a resting support from a particle below
-    //for (int dx = -1; dx <= 1; dx++)
-    for (int dx = 0; dx <= 0; dx++)
+
+    // The cell is at the bottom
+    if (p.position.y - p.size * 0.5 <= -1.0)
     {
-        int dy = -1; // Only the cell(s) below the current cell
-        ivec2 neighborCell = gridCell + ivec2(dx, dy);
-
-        // The cell is at the bottom and the velocity is below the threshold
-        if (neighborCell.y < 0 && abs(p.velocity.y) < p.size * 0.5)
-        {
-            p.position.y = -1.0 + p.size * 0.5;
-            p.resting = 1.0;
-            supportFound = true;
-            break;
-        }
-
-        // Ensure the neighbor cell is within the grid.
-        if (neighborCell.x < 0 || neighborCell.y < 0 || neighborCell.x >= gridWidth || neighborCell.y >= gridWidth)
-            continue;
-
+        p.position.y = -1.0 + p.size * 0.5;
+        p.resting = 1.0;
+        p.velocity.y = 0.0;
+        supportFound = true;
+    }
+    else
+    {
+        //loop through all particles in the cell below
+        ivec2 neighborCell = gridCell + ivec2(0, -1);
         uint neighborCellIndex = uint(neighborCell.x + neighborCell.y * gridWidth);
-        // Loop over all particles in the neighbor cell.
         for (uint i = 0; i < grid[neighborCellIndex]; i++)
         {
             aboveAnother = true;
 
+            //get the particle
             uint neighborID = gridParticles[neighborCellIndex * maxParticlesPerCell + i];
-            
             Particle other = particles[neighborID];
-
-            if (other.isActive != 1.0 || other.resting != 1.0)
+            if (other.isActive != 1.0)
                 continue;
 
             // Calculate where p should be if it were resting on top of the other particle.
-            float expectedY = other.position.y + (other.size + p.size) * 0.5;
-            //float expectedY = other.position.y + other.size * ;
+            //float expectedY = other.position.y + (other.size + p.size) * 0.5;
+            float expectedY = other.position.y + other.size;
             // Compare p's bottom with the expected top of the resting neighbor.
             float pBottom = p.position.y - p.size * 0.5;
             float otherTop = other.position.y + other.size * 0.5;
             float dist = pBottom - otherTop;
-            if (dist <= 0.0 || dist < restingThreshold)
+            if (dist <= 0.0) //particles has overlapped the lower particle
             {
-                // Snap the particle's position so that it sits exactly on top.
-                p.position.y = expectedY;
+                p.position.y = expectedY;// Snap the particle's position so that it sits exactly on top.
+                p.velocity.y = 0.0;
+                p.resting = 1.0;
+                supportFound = true;
+                break;
+            }
+            else if (dist <= restingThreshold)
+            {
+                p.position = previous.position;
                 p.velocity.y = 0.0;
                 p.resting = 1.0;
                 supportFound = true;
                 break;
             }
         }
-        if (supportFound)
-            break;
     }
 
     if(supportFound)
     {
-        p.color = vec3(0.0, 0.0, 0.0);
+        p.color = vec3(1.0, 0.0, 0.0);
         particles[particleID] = p;
         return;
     }
     else if (aboveAnother)
     {
-        p.color = vec3(1.0, 0.0, 0.0);
+        p.color = vec3(0.0, 1.0, 0.0);
     }
     else
     {

@@ -185,7 +185,7 @@ void renderLoop()
 
         currentSSBO = 1 - currentSSBO; // Alternate between 0 and 1
 
-        drawGridLines();
+        //drawGridLines();
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);

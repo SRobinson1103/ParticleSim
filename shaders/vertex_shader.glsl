@@ -2,6 +2,7 @@
 
 struct Particle
 {
+    uint id;
     vec2 position;
     vec2 velocity;
     vec3 color;
